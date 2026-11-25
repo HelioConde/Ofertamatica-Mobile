@@ -13,4 +13,13 @@ public class ExpiryTest {
  @Test public void expiredStillRecognized(){assertEquals("2024-02-29",Expiry.read("VAL 29/02/24"));}
  @Test public void refusesGuesses(){assertNull(Expiry.read("VAL 2O/08/2027"));assertNull(Expiry.read("VAL: JUN/27"));assertNull(Expiry.read("15/05/27"));}
  @Test public void accentedAndFullMonth(){assertEquals("2027-09-28",Expiry.read("Validade: 28 setembro 2027"));}
+ @Test public void splitLabelRegression(){
+  assertEquals("2027-06-30",Expiry.read("FAB: 01/07/26\nVAL:\n30/06/27\nLOT: 07/26 OP5"));
+  assertEquals("2027-05-15",Expiry.read("L06 M35 150526 A\nVENCE:\n15/05/27"));
+  assertEquals("2027-06-08",Expiry.read("VAL:\n08 JUN 27"));
+  assertNull(Expiry.read("VAL:\nLOT: 240427"));
+  assertNull(Expiry.read("VAL:\n240427"));
+  assertNull(Expiry.read("VAL:\nFAB: 15/05/27"));
+  assertNull(Expiry.read("VAL:\n15/05/27\nVAL: 12/05/27"));
+ }
 }

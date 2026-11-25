@@ -47,6 +47,31 @@ public class OcrTest {
   if(i==2){Matrix m=new Matrix();m.postRotate(90);Bitmap r=Bitmap.createBitmap(b,0,0,b.getWidth(),b.getHeight(),m,true);b.recycle();return r;}
   return b;
  }
+ // Experimental fallback: dark-ink mask and a small dilation to join dotted strokes.
+ // No expected date is used to select a candidate.
+ private Bitmap joinDarkInk(Bitmap source){
+  int w=source.getWidth(),h=source.getHeight();
+  int[] original=new int[w*h],out=new int[w*h];
+  source.getPixels(original,0,w,0,0,w,h);
+  boolean[] ink=new boolean[w*h];
+  for(int i=0;i<ink.length;i++){
+   int p=original[i];
+   ink[i]=(77*Color.red(p)+150*Color.green(p)+29*Color.blue(p))/256<110;
+  }
+  Arrays.fill(out,Color.WHITE);
+  int radius=Math.max(1,Math.min(3,Math.round(w/480f)));
+  for(int y=0;y<h;y++)for(int x=0;x<w;x++)if(ink[y*w+x])
+   for(int dy=-radius;dy<=radius;dy++)for(int dx=-radius;dx<=radius;dx++)
+    if(dx*dx+dy*dy<=radius*radius && x+dx>=0 && x+dx<w && y+dy>=0 && y+dy<h)out[(y+dy)*w+x+dx]=Color.BLACK;
+  return Bitmap.createBitmap(out,w,h,Bitmap.Config.ARGB_8888);
+ }
+ private String runWithFallback(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
+  String status=run(ocr,image,rotation,label+"-raw",expected);
+  if(!"NO_READ".equals(status))return status;
+  Bitmap treated=joinDarkInk(image);
+  try{return run(ocr,treated,rotation,label+"-dark-ink",expected);}
+  finally{treated.recycle();}
+ }
  private String run(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
   long start=android.os.SystemClock.elapsedRealtime();
   String text=Tasks.await(ocr.process(InputImage.fromBitmap(image,rotation)),20,TimeUnit.SECONDS).getText();
@@ -62,7 +87,7 @@ public class OcrTest {
   try{
    for(int i=0;i<8;i++){
     Bitmap b=synthetic(i);
-    try {String s=run(ocr,b,i==2?270:0,"synthetic-"+(i+1),EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
+    try {String s=runWithFallback(ocr,b,i==2?270:0,"synthetic-"+(i+1),EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
     finally{b.recycle();}
    }
   }finally{ocr.close();}
@@ -81,7 +106,7 @@ public class OcrTest {
     String name=String.format(Locale.ROOT,"%02d.jpg",i+1);
     try(InputStream in=ctx.getAssets().open(name)){
      Bitmap b=BitmapFactory.decodeStream(in);assertNotNull(b);
-     try{String s=run(ocr,b,0,"real-"+name,EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
+     try{String s=runWithFallback(ocr,b,0,"real-"+name,EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
      finally{b.recycle();}
     }
    }

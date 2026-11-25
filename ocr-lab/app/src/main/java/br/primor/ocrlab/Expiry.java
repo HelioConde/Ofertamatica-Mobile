@@ -14,7 +14,15 @@ public final class Expiry {
  public static String read(String text) {
   String normalized = Normalizer.normalize(text,Normalizer.Form.NFD).replaceAll("\\p{M}","").toUpperCase(Locale.ROOT);
   Set<String> dates=new HashSet<>();
-  for(String line:normalized.split("\\R")) {
+  String[] lines=normalized.split("\\R");
+  for(int i=0;i<lines.length;i++) {
+   String line=lines[i].trim();
+   // An isolated expiry label may be emitted as a separate OCR line.
+   // Only join an immediately following standalone, separated date; never a bare lot number.
+   if(i+1<lines.length && line.matches("(?:VALIDADE|VENCIMENTO|VENCE|VENC|VAL)\\s*[:.\\-]?")) {
+    String next=lines[i+1].trim();
+    if(NUM.matcher(next).matches() || MONTH.matcher(next).matches()) line=line+" "+next;
+   }
    Matcher labels=LABEL.matcher(line);
    while(labels.find()) {
     String tail=line.substring(labels.end());
