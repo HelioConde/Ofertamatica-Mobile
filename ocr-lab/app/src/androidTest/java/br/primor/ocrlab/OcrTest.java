@@ -47,38 +47,64 @@ public class OcrTest {
   if(i==2){Matrix m=new Matrix();m.postRotate(90);Bitmap r=Bitmap.createBitmap(b,0,0,b.getWidth(),b.getHeight(),m,true);b.recycle();return r;}
   return b;
  }
- // Experimental fallback: dark-ink mask and a small dilation to join dotted strokes.
- // No expected date is used to select a candidate.
- private Bitmap joinDarkInk(Bitmap source){
-  int w=source.getWidth(),h=source.getHeight();
-  int[] original=new int[w*h],out=new int[w*h];
-  source.getPixels(original,0,w,0,0,w,h);
-  boolean[] ink=new boolean[w*h];
-  for(int i=0;i<ink.length;i++){
-   int p=original[i];
-   ink[i]=(77*Color.red(p)+150*Color.green(p)+29*Color.blue(p))/256<110;
+ // Morphological closing connects dotted strokes without retaining all the extra ink of dilation.
+ private boolean[] morph(boolean[] source,int w,int h,int radius,boolean dilation){
+  int stride=w+1; int[] integral=new int[stride*(h+1)];
+  for(int y=0;y<h;y++){
+   int sum=0;
+   for(int x=0;x<w;x++){if(source[y*w+x])sum++;integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+sum;}
   }
-  Arrays.fill(out,Color.WHITE);
-  int radius=Math.max(1,Math.min(3,Math.round(w/480f)));
-  for(int y=0;y<h;y++)for(int x=0;x<w;x++)if(ink[y*w+x])
-   for(int dy=-radius;dy<=radius;dy++)for(int dx=-radius;dx<=radius;dx++)
-    if(dx*dx+dy*dy<=radius*radius && x+dx>=0 && x+dx<w && y+dy>=0 && y+dy<h)out[(y+dy)*w+x+dx]=Color.BLACK;
-  return Bitmap.createBitmap(out,w,h,Bitmap.Config.ARGB_8888);
+  boolean[] result=new boolean[w*h];
+  for(int y=0;y<h;y++)for(int x=0;x<w;x++){
+   int left=Math.max(0,x-radius),right=Math.min(w,x+radius+1);
+   int top=Math.max(0,y-radius),bottom=Math.min(h,y+radius+1);
+   int sum=integral[bottom*stride+right]-integral[top*stride+right]-integral[bottom*stride+left]+integral[top*stride+left];
+   result[y*w+x]=dilation?sum>0:sum==(right-left)*(bottom-top);
+  }
+  return result;
  }
- private String runWithFallback(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
-  String status=run(ocr,image,rotation,label+"-raw",expected);
-  if(!"NO_READ".equals(status))return status;
-  Bitmap treated=joinDarkInk(image);
-  try{return run(ocr,treated,rotation,label+"-dark-ink",expected);}
-  finally{treated.recycle();}
+ private Bitmap prepareInk(Bitmap source,int threshold,int radius,boolean close,boolean invert){
+  // Bound the processing size. Scale up again only after the binary mask is produced.
+  int max=Math.max(source.getWidth(),source.getHeight());
+  Bitmap bounded=max>1600?Bitmap.createScaledBitmap(source,Math.max(1,source.getWidth()*1600/max),Math.max(1,source.getHeight()*1600/max),true):source;
+  int w=bounded.getWidth(),h=bounded.getHeight();int[] pixels=new int[w*h];
+  bounded.getPixels(pixels,0,w,0,0,w,h);if(bounded!=source)bounded.recycle();
+  boolean[] ink=new boolean[w*h];for(int i=0;i<ink.length;i++){
+   int p=pixels[i],gray=(77*Color.red(p)+150*Color.green(p)+29*Color.blue(p))/256;
+   ink[i]=invert?gray>255-threshold:gray<threshold;
+  }
+  ink=morph(ink,w,h,radius,true);if(close)ink=morph(ink,w,h,radius,false);
+  for(int i=0;i<ink.length;i++)pixels[i]=ink[i]?Color.BLACK:Color.WHITE;
+  Bitmap b=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);
+  if(max<1200){Bitmap enlarged=Bitmap.createScaledBitmap(b,w*2,h*2,true);b.recycle();return enlarged;}
+  return b;
  }
- private String run(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
+ private String read(TextRecognizer ocr,Bitmap image,int rotation,String label) throws Exception{
   long start=android.os.SystemClock.elapsedRealtime();
   String text=Tasks.await(ocr.process(InputImage.fromBitmap(image,rotation)),20,TimeUnit.SECONDS).getText();
   long ms=android.os.SystemClock.elapsedRealtime()-start;
   String found=Expiry.read(text);
-  String status=expected.equals(found)?"OK":found==null?"NO_READ":"WRONG_DATE";
-  Log.i("OCRLab",label+" expected="+expected+" actual="+found+" status="+status+" latency_ms="+ms+" text="+text.replace("\n"," | "));
+  Log.i("OCRLab",label+" parsed="+found+" latency_ms="+ms+" text="+text.replace("\n"," | "));
+  return found;
+ }
+ private String runWithFallback(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
+  long start=android.os.SystemClock.elapsedRealtime();
+  String found=read(ocr,image,rotation,label+"-raw");
+  if(found==null){
+   // Always evaluate the same fixed variants. No expected date is consulted until scoring.
+   int r=Math.max(1,Math.min(4,Math.round(Math.max(image.getWidth(),image.getHeight())/320f)));
+   int[][] variants={{110,r,1,0},{145,r+1,1,0},{165,r,0,0},{110,r,1,1}};
+   Map<String,Integer> votes=new HashMap<>();
+   for(int i=0;i<variants.length;i++){
+    int[] v=variants[i];Bitmap b=prepareInk(image,v[0],v[1],v[2]==1,v[3]==1);
+    try{String candidate=read(ocr,b,rotation,label+"-variant-"+(i+1));if(candidate!=null)votes.put(candidate,votes.getOrDefault(candidate,0)+1);}
+    finally{b.recycle();}
+   }
+   if(votes.size()==1){Map.Entry<String,Integer> candidate=votes.entrySet().iterator().next();if(candidate.getValue()>=2)found=candidate.getKey();}
+   Log.i("OCRLab",label+" fallback_votes="+votes+" (two matching variants required)");
+  }
+  String status=expected==null?(found==null?"OK":"WRONG_DATE"):expected.equals(found)?"OK":found==null?"NO_READ":"WRONG_DATE";
+  Log.i("OCRLab",label+" FINAL expected="+expected+" actual="+found+" status="+status+" total_ms="+(android.os.SystemClock.elapsedRealtime()-start));
   return status;
  }
  @Test public void syntheticImages() throws Exception{
@@ -93,7 +119,19 @@ public class OcrTest {
   }finally{ocr.close();}
   Log.i("OCRLab","synthetic total=8 correct="+ok+" wrong="+wrong+" no_read="+(8-ok-wrong));
   assertEquals("No wrong dates permitted",0,wrong);
-  assertTrue("At least six of eight synthetic samples",ok>=6);
+  assertTrue("Preserve validated baseline: at least seven of eight synthetic samples",ok>=7);
+ }
+ @Test public void noExpiryNegativeImages() throws Exception{
+  TextRecognizer ocr=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+  String[][] samples={{"FAB: 15/05/27","LOT: 240427"},{"VAL: 31/02/27"},{"VAL: 15/05/27","VAL: 12/05/27"},{"LOTE: 240427","15/05/27"}};
+  try{
+   for(int i=0;i<samples.length;i++){
+    Bitmap b=Bitmap.createBitmap(960,300,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);c.drawColor(Color.WHITE);
+    Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setTextSize(58);p.setColor(Color.BLACK);
+    for(int j=0;j<samples[i].length;j++)c.drawText(samples[i][j],30,75+75*j,p);
+    try{assertEquals("Negative sample "+i,"OK",runWithFallback(ocr,b,0,"negative-"+(i+1),null));}finally{b.recycle();}
+   }
+  }finally{ocr.close();}
  }
  @Test public void realPhotosIfPresent() throws Exception{
   Context ctx=InstrumentationRegistry.getInstrumentation().getContext();

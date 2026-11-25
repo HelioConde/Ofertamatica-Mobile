@@ -65,3 +65,10 @@ jobs:
             ocr-lab/app/build/outputs/androidTest-results/
             ocr-lab/ocr-log.txt
           if-no-files-found: warn
+      - name: Publish OCR summary in job log
+        if: always()
+        run: |
+          if [ -f ocr-lab/ocr-log.txt ]; then
+            grep "OCRLab" ocr-lab/ocr-log.txt || true
+            { echo "## OCR benchmark"; echo '```text'; grep -E "FINAL|total=|REAL PHOTOS NOT RUN" ocr-lab/ocr-log.txt || true; echo '```' ; } >> "$GITHUB_STEP_SUMMARY"
+          fi

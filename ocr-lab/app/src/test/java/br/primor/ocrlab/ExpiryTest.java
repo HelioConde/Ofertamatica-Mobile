@@ -22,4 +22,10 @@ public class ExpiryTest {
   assertNull(Expiry.read("VAL:\nFAB: 15/05/27"));
   assertNull(Expiry.read("VAL:\n15/05/27\nVAL: 12/05/27"));
  }
+ @Test public void strictTokens(){
+  assertNull(Expiry.read("LOTE 1VAL 240427"));
+  assertNull(Expiry.read("VAL 240427A"));
+  assertNull(Expiry.read("VAL 08 JUNXYZ 27"));
+  assertEquals("2027-06-08",Expiry.read("VAL 08 JUNHO 27"));
+ }
 }
