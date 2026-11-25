@@ -79,10 +79,18 @@ public class OcrTest {
   if(max<1200){Bitmap enlarged=Bitmap.createScaledBitmap(b,w*2,h*2,true);b.recycle();return enlarged;}
   return b;
  }
- private void exportSynthetic(Bitmap image,String name) throws IOException {
-  File folder=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getFilesDir(),"ocr-benchmark");
-  if(!folder.isDirectory()&&!folder.mkdirs())throw new IOException("Cannot create benchmark folder");
-  try(OutputStream out=new FileOutputStream(new File(folder,name+".png"))){if(!image.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("PNG export failed");}
+ private void exportSynthetic(Bitmap image,String name) throws Exception {
+  // Synthetic fixtures only. Instrumentation may uninstall the app before adb can read its sandbox.
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+  if(!image.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("PNG export failed");
+  byte[] bytes=out.toByteArray();
+  String encoded=android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP);
+  byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+  StringBuilder hash=new StringBuilder();
+  for(byte b:digest)hash.append(String.format(Locale.ROOT,"%02x",b&255));
+  int chunkSize=2400,total=(encoded.length()+chunkSize-1)/chunkSize;
+  Log.i("OCRFixture","FIXTURE_META "+name+" "+total+" "+bytes.length+" "+hash);
+  for(int i=0;i<total;i++)Log.i("OCRFixture","FIXTURE_CHUNK "+name+" "+i+" "+encoded.substring(i*chunkSize,Math.min(encoded.length(),(i+1)*chunkSize)));
  }
  private boolean veto;
  private String read(TextRecognizer ocr,Bitmap image,int rotation,String label) throws Exception{
