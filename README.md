@@ -16,3 +16,6 @@ Espera `#ok`, identifica-se com `#tc406|6.5.1`, envia `#EAN`, aceita `#Nome|R$ 6
 
 ## Testes
 `npm test` utiliza TCP local simulado; não substitui a validação Android e Gertec real.
+
+## 0.1.1 — Compatibilidade legada
+Aceita também `# PRECO: R$ 6,99 <metadados>|PRODUTO FICTICIO` com controles entre o preço e a descrição. Tempo de negociação sem confirmação: 3 s; limite total: 12 s. Diagnósticos separam conexão, saudação, consulta sem resposta e resposta não reconhecida. Não registra endereços internos nem conteúdo bruto de respostas. Teste real no celular ainda necessário.

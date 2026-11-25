@@ -10,3 +10,13 @@ async function simulated(t, response, alwaysLive=false) {
 test('TCP real local: handshake e resposta fragmentada',async t=>assert.equal((await simulated(t,'#MOLHO IMPERADOR 145M|R$ 6,99')).cents,699));
 test('TCP real local: alwayslive e produto inexistente',async t=>assert.equal((await simulated(t,'#nfound',true)).status,'not_found'));
 test('TCP real local: timeout sem resposta',async t=>await assert.rejects(simulated(t,null),/Tempo limite/));
+
+test('legado: preço antes do nome e bytes de controle',()=>{
+ const raw='#  PRECO: R$ 6,99    \xc4M\\\xc7\xed\xc7\xb90|PRODUTO FICTICIO';
+ assert.deepEqual(parseResponse(raw),{status:'found',name:'PRODUTO FICTICIO',price:'R$ 6,99',cents:699});
+ assert.equal(parseResponse('# PRECO: R$ 6,9 |X'),null);
+ assert.equal(parseResponse('# PRECO: R$ 6,99|'),null);
+ assert.equal(parseResponse('# PRECO: R$ 6,99|X|Y'),null);
+});
+test('TCP legado fragmentado',async t=>assert.equal((await simulated(t,'#  PRECO: R$ 18,99    \xc4M\\\xc7\xb90|PRODUTO TESTE')).cents,1899));
+test('diagnóstico de resposta desconhecida',async t=>await assert.rejects(simulated(t,'#DESCONHECIDO'),/formato não reconhecido/));
