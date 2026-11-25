@@ -28,4 +28,11 @@ public class ExpiryTest {
   assertNull(Expiry.read("VAL 08 JUNXYZ 27"));
   assertEquals("2027-06-08",Expiry.read("VAL 08 JUNHO 27"));
  }
+ @Test public void ambiguityCannotBeRescuedByIgnoringMalformedLabel(){
+  assertNull(Expiry.read("VAL: 15/05/27\nVAL: 1205/27"));
+  assertTrue(Expiry.ambiguous("VAL: 15/05/27\nVAL: 1205/27"));
+  assertTrue(Expiry.ambiguous("VAL: 15/05/27\nVAL: 12/05/27"));
+  assertFalse(Expiry.ambiguous("VAL: 15/05/27\nVAL: 15/05/27"));
+  assertEquals("2027-05-15",Expiry.read("VAL: 15/05/27\nVAL: 15/05/27"));
+ }
 }

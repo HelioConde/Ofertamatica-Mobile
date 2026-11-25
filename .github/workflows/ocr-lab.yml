@@ -53,7 +53,17 @@ jobs:
           disable-animations: true
           script: |
             adb logcat -c
-            result=0; gradle -p ocr-lab :app:connectedDebugAndroidTest --no-daemon || result=$?; adb logcat -d -s OCRLab:I > ocr-lab/ocr-log.txt; exit "$result"
+            result=0; gradle -p ocr-lab :app:connectedDebugAndroidTest --no-daemon || result=$?; adb logcat -d -s OCRLab:I > ocr-lab/ocr-log.txt; mkdir -p ocr-lab/benchmark-images; for n in synthetic-1 synthetic-2 synthetic-3 synthetic-4 synthetic-5 synthetic-6 synthetic-7 synthetic-8 negative-1 negative-2 negative-3 negative-4; do adb exec-out run-as br.primor.ocrlab cat "files/ocr-benchmark/$n.png" > "ocr-lab/benchmark-images/$n.png" || result=1; done; exit "$result"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compare alternate OCR engine on the same synthetic images
+        env:
+          OMP_NUM_THREADS: '2'
+          OPENBLAS_NUM_THREADS: '2'
+        run: |
+          python -m pip install -r ocr-lab/tools/requirements.txt
+          python ocr-lab/tools/compare.py
       - name: Upload test reports (not APK)
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,6 +74,8 @@ jobs:
             ocr-lab/app/build/reports/androidTests/
             ocr-lab/app/build/outputs/androidTest-results/
             ocr-lab/ocr-log.txt
+            ocr-lab/comparison.json
+            ocr-lab/benchmark-images/
           if-no-files-found: warn
       - name: Publish OCR summary in job log
         if: always()

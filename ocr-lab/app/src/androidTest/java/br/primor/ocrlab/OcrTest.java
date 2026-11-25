@@ -79,32 +79,40 @@ public class OcrTest {
   if(max<1200){Bitmap enlarged=Bitmap.createScaledBitmap(b,w*2,h*2,true);b.recycle();return enlarged;}
   return b;
  }
+ private void exportSynthetic(Bitmap image,String name) throws IOException {
+  File folder=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getFilesDir(),"ocr-benchmark");
+  if(!folder.isDirectory()&&!folder.mkdirs())throw new IOException("Cannot create benchmark folder");
+  try(OutputStream out=new FileOutputStream(new File(folder,name+".png"))){if(!image.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("PNG export failed");}
+ }
+ private boolean veto;
  private String read(TextRecognizer ocr,Bitmap image,int rotation,String label) throws Exception{
   long start=android.os.SystemClock.elapsedRealtime();
   String text=Tasks.await(ocr.process(InputImage.fromBitmap(image,rotation)),20,TimeUnit.SECONDS).getText();
   long ms=android.os.SystemClock.elapsedRealtime()-start;
   String found=Expiry.read(text);
+  veto=Expiry.ambiguous(text);
   Log.i("OCRLab",label+" parsed="+found+" latency_ms="+ms+" text="+text.replace("\n"," | "));
   return found;
  }
  private String runWithFallback(TextRecognizer ocr,Bitmap image,int rotation,String label,String expected) throws Exception{
   long start=android.os.SystemClock.elapsedRealtime();
   String found=read(ocr,image,rotation,label+"-raw");
-  if(found==null){
+  boolean blocked=veto;
+  if(found==null&&!blocked){
    // Always evaluate the same fixed variants. No expected date is consulted until scoring.
    int r=Math.max(1,Math.min(4,Math.round(Math.max(image.getWidth(),image.getHeight())/320f)));
-   int[][] variants={{110,r,1,0},{145,r+1,1,0},{165,r,0,0},{110,r,1,1}};
+   int[][] variants={{110,r,1,0},{145,r+1,1,0}};
    Map<String,Integer> votes=new HashMap<>();
    for(int i=0;i<variants.length;i++){
     int[] v=variants[i];Bitmap b=prepareInk(image,v[0],v[1],v[2]==1,v[3]==1);
-    try{String candidate=read(ocr,b,rotation,label+"-variant-"+(i+1));if(candidate!=null)votes.put(candidate,votes.getOrDefault(candidate,0)+1);}
+    try{String candidate=read(ocr,b,rotation,label+"-variant-"+(i+1));if(veto)blocked=true;if(candidate!=null)votes.put(candidate,votes.getOrDefault(candidate,0)+1);}
     finally{b.recycle();}
    }
-   if(votes.size()==1){Map.Entry<String,Integer> candidate=votes.entrySet().iterator().next();if(candidate.getValue()>=2)found=candidate.getKey();}
+   if(!blocked&&votes.size()==1){Map.Entry<String,Integer> candidate=votes.entrySet().iterator().next();if(candidate.getValue()>=2)found=candidate.getKey();}
    Log.i("OCRLab",label+" fallback_votes="+votes+" (two matching variants required)");
   }
   String status=expected==null?(found==null?"OK":"WRONG_DATE"):expected.equals(found)?"OK":found==null?"NO_READ":"WRONG_DATE";
-  Log.i("OCRLab",label+" FINAL expected="+expected+" actual="+found+" status="+status+" total_ms="+(android.os.SystemClock.elapsedRealtime()-start));
+  Log.i("OCRLab",label+" FINAL expected="+expected+" actual="+found+" status="+status+" blocked="+blocked+" total_ms="+(android.os.SystemClock.elapsedRealtime()-start));
   return status;
  }
  @Test public void syntheticImages() throws Exception{
@@ -113,7 +121,7 @@ public class OcrTest {
   try{
    for(int i=0;i<8;i++){
     Bitmap b=synthetic(i);
-    try {String s=runWithFallback(ocr,b,i==2?270:0,"synthetic-"+(i+1),EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
+    try {exportSynthetic(b,"synthetic-"+(i+1));String s=runWithFallback(ocr,b,i==2?270:0,"synthetic-"+(i+1),EXPECTED[i]);if("OK".equals(s))ok++;else if("WRONG_DATE".equals(s))wrong++;}
     finally{b.recycle();}
    }
   }finally{ocr.close();}
@@ -129,7 +137,7 @@ public class OcrTest {
     Bitmap b=Bitmap.createBitmap(960,300,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);c.drawColor(Color.WHITE);
     Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setTextSize(58);p.setColor(Color.BLACK);
     for(int j=0;j<samples[i].length;j++)c.drawText(samples[i][j],30,75+75*j,p);
-    try{assertEquals("Negative sample "+i,"OK",runWithFallback(ocr,b,0,"negative-"+(i+1),null));}finally{b.recycle();}
+    try{exportSynthetic(b,"negative-"+(i+1));assertEquals("Negative sample "+i,"OK",runWithFallback(ocr,b,0,"negative-"+(i+1),null));}finally{b.recycle();}
    }
   }finally{ocr.close();}
  }
