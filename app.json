@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Ofertamática Mobile",
+    "name": "Consultor de Preço Primor Supermercado",
     "slug": "ofertamatica-mobile",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "android": {
       "package": "com.helioconde.ofertamatica.mobile",
@@ -13,7 +13,7 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 2
+      "versionCode": 3
     },
     "plugins": [
       [
