@@ -18,8 +18,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
       - name: Prepare Android SDK and fixtures
         run: |
+          command -v sdkmanager
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           if [ -f validade-fotos.zip ]; then
             mkdir -p ocr-lab/app/src/androidTest/assets
